@@ -1,5 +1,7 @@
 import pandas as pd
+from collections import defaultdict
 from stats import *
+from ast import literal_eval
 
 """
     File:          utils.py
@@ -57,6 +59,40 @@ def ccle_to_achilles(meta_df, ccle_field):
 
     id_convert = {y: x for x, y in zip(meta_df.index.tolist(), meta_df[ccle_field].tolist())}
     return id_convert
+
+def ecdna_freq_genes(aggregated_results_path: str, oncogenes_only: bool=False) -> dict[str, tuple[int, int]]:
+    """
+    Creates a dictionary of all genes or oncogenes and their frequency across all 
+    CCLEs.
+    
+    Args:
+        aggregated_results_path (str): the path to the Amplicon Architect Data csv.
+        oncogenes_only (optional flag, default=False): if the user wants to only
+            see oncogene frequencies, this can be set to True.
+            
+    Returns:
+        Dictionary with key='GeneID', value='Gene Frequency'.
+    """
+    # read in the AA results and index by classification
+    aggregate = pd.read_csv(aggregated_results_path, index_col='Classification')
+    
+    # extract all rows with ecDNA classification into a new df
+    ecdna = aggregate.loc['ecDNA']
+    # apply literal eval so that the All genes column does not get evaluated as str
+    ecdna.loc[:,'Oncogenes'] = ecdna['Oncogenes'].apply(literal_eval) # use .loc to avoid chain indexing
+    ecdna.loc[:,'All genes'] = ecdna['All genes'].apply(literal_eval)
+
+    # use lambda function to set default gene count to 0
+    genes = defaultdict(lambda: 0)
+
+    for i, row in ecdna.iterrows():
+        if oncogenes_only:
+            for gene in row['Oncogenes']:
+                genes[gene] += 1
+        else:
+            for gene in row['All genes']:
+                genes[gene] += 1
+    return genes
 
 def execute_workflow(args):
     return
