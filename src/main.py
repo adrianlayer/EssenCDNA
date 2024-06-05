@@ -16,6 +16,20 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # TODO: add parameters as necessary
+
+    # File inputs
+    parser.add_argument("--esen", help="DepMap CRISPR essentiality input", type=str, required=True)
+    parser.add_argument("--aa", help="Amplicon Architect aggregated results data input", type=str, required=True)
+    parser.add_argument("--meta", help="DepMap metadata input", type=str, required=True)
+
+    # File field names
+    parser.add_argument("--aa_type_field", help="AA type field in AA aggregated results data", type=str, required=True, defualt="Classification")
+    parser.add_argument("--dep_ccle_field", help="CCLE name field in DepMap metadata", type=str, required=True, default="CCLEName")
+    parser.add_argument("--aa_samples_field", help="AA cell-line field in AA aggregated results data", type=str, required=True, default="Sample name")
+    parser.add_argument("--aa_gene_field", help="all genes field in AA aggregated results data", type=str, required=True, default="All genes")
+    parser.add_argument("--aa_oncogene_field", help="oncogenes field in AA aggregated results data", type=str, required=True, default="Oncogenes")
+
+    # Developer arguments
     parser.add_argument("-v", "--verbose", help="Verbosity flag", action='store_true')
     parser.add_argument("-d", "--debug", help="Debugging flag", action='store_true')
 
