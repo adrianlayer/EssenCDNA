@@ -163,8 +163,8 @@ def group_achilles(meta_df, ):
 
     return oncotree_primary_disease_dict, oncotree_lineage_dict, oncotree_subtype_dict
 
-def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field, 
-                     oncogenes_only: bool=False) -> dict[str, list[int, set[str]]]:
+def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field, copy_num_field, classification_field,
+                     oncogenes_only: bool=False) -> dict[str, list[float, set[str]]]:
     """
     Creates a descending sorted dictionary of all genes or oncogenes by frequency
     across all ccles. Genes are mapped to a length 2 list of [frequency, 
@@ -175,6 +175,8 @@ def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field,
         id_field (str): field name for samples names (or IDs); typically is first column
         gene_field (str): field name for all genes in an amplicon
         oncogene_field (str): field name for all oncogenes in an amplicon
+        copy_num_field (str): field name for median copy count of feature in an amplicon
+        classification_field (str): field name for classification of ccle feature in an amplicon
         oncogenes_only (optional bool, default=False): if the user wants to only
             see oncogene frequencies, this can be set to True
             
@@ -183,9 +185,10 @@ def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field,
         Access frequency of gene X by genes[X][0]
         Access ccles of gene X by genes[X][1]
     """
-
+    ec_aa_df = aa_df.set_index(classification_field)
+    
     # Extract all rows with ecDNA classification into a new df
-    ecdna = aa_df.loc['ecDNA']
+    ecdna = ec_aa_df.loc['ecDNA']
     # Apply literal eval so that the gene_field column does not get evaluated as str
     ecdna.loc[:,oncogene_field] = ecdna[oncogene_field].apply(literal_eval) # use .loc to avoid chain indexing
     ecdna.loc[:,gene_field] = ecdna[gene_field].apply(literal_eval)
@@ -194,7 +197,7 @@ def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field,
         """
         Helper for frequent genes dictionary definition.
         """
-        return[0, set()]
+        return[0.0, set()]
 
     # Use lambda function to set default gene count to 0
     genes = defaultdict(def_val)
@@ -202,11 +205,11 @@ def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field,
     for i, row in ecdna.iterrows():
         if oncogenes_only:
             for gene in row[oncogene_field]:
-                genes[gene][0] += 1
+                genes[gene][0] += row[copy_num_field]
                 genes[gene][1].add(row[id_field])
         else:
             for gene in row[gene_field]:
-                genes[gene][0] += 1
+                genes[gene][0] += row[copy_num_field]
                 genes[gene][1].add(row[id_field])
     sorted_genes = {k: v for k, v in sorted(genes.items(), key=lambda x: x[1][0], reverse=True)}
     
