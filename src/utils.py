@@ -163,7 +163,7 @@ def group_achilles(meta_df, ):
 
     return oncotree_primary_disease_dict, oncotree_lineage_dict, oncotree_subtype_dict
 
-def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field, copy_num_field, classification_field,
+def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field, copy_num_field,
                      oncogenes_only: bool=False) -> dict[str, list[float, set[str]]]:
     """
     Creates a descending sorted dictionary of all genes or oncogenes by frequency
@@ -176,7 +176,6 @@ def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field, copy_num_field
         gene_field (str): field name for all genes in an amplicon
         oncogene_field (str): field name for all oncogenes in an amplicon
         copy_num_field (str): field name for median copy count of feature in an amplicon
-        classification_field (str): field name for classification of ccle feature in an amplicon
         oncogenes_only (optional bool, default=False): if the user wants to only
             see oncogene frequencies, this can be set to True
             
@@ -184,11 +183,9 @@ def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field, copy_num_field
         Dictionary with key='GeneID', value=['Gene Frequency', set(ccles)].
         Access frequency of gene X by genes[X][0]
         Access ccles of gene X by genes[X][1]
-    """
-    ec_aa_df = aa_df.set_index(classification_field)
-    
+    """    
     # Extract all rows with ecDNA classification into a new df
-    ecdna = ec_aa_df.loc['ecDNA']
+    ecdna = aa_df.loc['ecDNA']
     # Apply literal eval so that the gene_field column does not get evaluated as str
     ecdna.loc[:,oncogene_field] = ecdna[oncogene_field].apply(literal_eval) # use .loc to avoid chain indexing
     ecdna.loc[:,gene_field] = ecdna[gene_field].apply(literal_eval)
@@ -215,6 +212,21 @@ def ecdna_freq_genes(aa_df, id_field, gene_field, oncogene_field, copy_num_field
     
     return sorted_genes
 
+def group_cell_lines(meta_df, achilles_field, group_field):
+    """
+    Groups cell-lines by a certain field in the metadata.
+
+    Args:
+        meta_df (DataFrame): metadata DataFrame generated from read_metadata()
+        achilles_field (str): name of field in the metadata with Achilles IDs
+        group_field (str): name of field in the metadata with the group of interest's classification
+
+    Returns:
+        A dictionary of the groups as keys and the values as Achilles IDs
+    """
+    group_dict = meta_df.groupby(group_field)[achilles_field].apply(list).to_dict()
+    return group_dict
+
 ###############################################################################
 # Functions for plotting graphs and generating statistics
 
@@ -237,7 +249,7 @@ def plot_genes(gene_list, esen_df, ec_aa_plus_ids, nametag):
     for gene in gene_list:
         
         # Checking for possibility of not finding the gene in CRISPR knockout data
-        if gene not in esen_df:
+        if (gene not in esen_df):
             continue
 
         ec_plus = []
@@ -287,25 +299,79 @@ def plot_genes(gene_list, esen_df, ec_aa_plus_ids, nametag):
     results_df.to_csv("../data/Outputs/Gene Tables/" + nametag + "_gene_table.csv", index=False)
     return results_df
 
-def execute_workflow(args):
+def cell_line_plot(gene_dict, esen_df, achilles_ids, nametag):
     """
-    Executes overall pipeline through calling helper functions.
+    Given a dict of genes (where values are "UP", "DOWN", or NaN regulation) and a list of cell-lines,
+    generates a plot for each cell-line such that essentiality is along the y-axis for each of the 
+    three regulation categories as columns.  
     
     Args:
-        args (argparse.Namespace): parsed arguments from command-line
-
+        gene_dict ([str]): dict of genes as keys and regulation directions as values
+        esen_df (DataFrame): matrix of CRISPR essentiality data
+        achilles_ids (set()): set containing Achilles IDs
+        nametag (str): nametag to differentiate various runs; added to output files
+            
     Returns:
-        None
+        DataFrame for each cell-line's statistics of the Kruskal-Wallis H test
     """    
-    esen = read_esen(args.esen)
-    meta = read_metadata(args.meta)
-    aa = read_aa(args.aa, args.aa_type_field)
-    ecdna_list = read_ecdna_list(args)
+    results = []
 
-    id_dict = ccle_to_achilles(meta, args.dep_ccle_field)
+    for id in achilles_ids:
+        # Skipping if ID not found in CRISPR data
+        if (id not in esen_df.index):
+            continue
 
+        up_scores = []
+        down_scores = []
+        same_scores = []
 
-    return None
+        for gene in gene_dict.keys():
+            # Skipping if gene not found in CRISPR data
+            if (gene not in esen_df):
+                continue
+
+            esen_val = esen_df[gene][id]
+            # Checking for NaN input, zz
+            if esen_val == "nan" or esen_val == None or esen_val == "" or esen_val == "NaN" or pd.isna(esen_val):
+                continue
+
+            regulation = gene_dict[gene]
+
+            if regulation == "UP":
+                up_scores.append(esen_val)
+            elif regulation == "DOWN":
+                down_scores.append(esen_val)
+            else:
+                same_scores.append(esen_val)
+            
+        stat, p_val = scipy.stats.kruskal(up_scores, down_scores, same_scores)
+        results.append({'Cell-Line': id, 'H-stat': stat, 'p-value': p_val})
+
+        # Create a DataFrame from the input arrays
+        data = {
+            'Cell_Type': ['Upregulated'] * len(up_scores) + ['Downregulated'] * len(down_scores) + ['No Regulation (Same)'] * len(same_scores),
+            'ecDNA_Score': up_scores + down_scores + same_scores
+        }
+        df = pd.DataFrame(data)
+
+        # Create the box and whisker plot with adjusted width and neutral fill color
+        plt.figure(figsize=(8, 10))
+        sns.boxplot(x='Cell_Type', y='ecDNA_Score', data=df, showfliers=False, width=0.4,
+                    boxprops=dict(facecolor="white", edgecolor="gray"),
+                    whiskerprops=dict(color="gray"), capprops=dict(color="gray"), medianprops=dict(color="gray"))
+
+        # Plot the data points
+        sns.stripplot(x='Cell_Type', y='ecDNA_Score', data=df, jitter=True, color='black', edgecolor='gray', alpha=0.1)
+        plt.title('Cell line = ' + id + " (" + nametag + " genes)")
+        plt.xlabel('ecDNA Regulation')
+        plt.ylabel('CRISPR Essentiality Score')
+        plt.tight_layout()
+        plt.savefig("../data/Outputs/Cell Line Plots/" + nametag + "_" + id + "_cell_line_plot.png")
+        plt.close()
+    
+    results_df = pd.DataFrame(results)
+    results_df.to_csv("../data/Outputs/Cell Line Tables/" + nametag + "_gene_table.csv", index=False)
+    return results_df
 
 ###############################################################################
 # Quick debugging code
